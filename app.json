@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Checador de asistencia",
+    "slug": "checador-asistencia",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "checador-asistencia",
+    "platforms": ["android"],
+    "android": {
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": ["expo-router"]
+  }
+}
