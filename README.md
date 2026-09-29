@@ -2,6 +2,8 @@
 
 Aplicación en español para **Expo Go en Android**. Usa React Native, Expo SDK 57, TypeScript y Supabase. No incluye web, PWA, panel administrativo, Roku ni compilaciones nativas.
 
+La web de supervisión está en su propio repositorio: [Lok-yo/checador-asistencia-web](https://github.com/Lok-yo/checador-asistencia-web). Ambos usan el mismo backend de Supabase.
+
 ## Preparación
 
 1. Instala Node.js y Expo Go en el celular Android. El proyecto usa SDK 57; si Expo Go muestra una incompatibilidad, instala la versión de Expo Go correspondiente a SDK 57 desde [expo.dev/go](https://expo.dev/go) para Android.
@@ -28,9 +30,9 @@ No necesitas `prebuild`, EAS, APK ni development build. `expo-camera`, `expo-loc
 
 ## Correo y SMTP
 
-En el proyecto conectado, **la confirmación de correo está activa**: el registro crea la cuenta y el perfil, pero el inicio de sesión se rechaza hasta confirmar el correo. Para probar con una dirección real, revisa el mensaje de verificación y luego vuelve manualmente a Expo Go para iniciar sesión. No se configuró un enlace profundo de confirmación para Expo Go.
+El propietario **desactivó la confirmación de correo** en el proyecto conectado y confirmó que el registro y el inicio de sesión funcionan en Android. Si vuelves a activarla, Supabase rechazará el inicio de sesión hasta confirmar el correo; después de hacerlo, vuelve manualmente a Expo Go. No se configuró un enlace profundo de confirmación para Expo Go.
 
-En Supabase revisa **Authentication → Providers → Email** y **Authentication → SMTP Settings**. El MCP disponible no expone esos ajustes; no se verificó la entrega real de correo ni SMTP. Para una demostración académica inmediata puedes desactivar la confirmación de correo en ese proyecto desde el panel, o configurar SMTP y probar la recepción con una cuenta real. No guardes contraseñas fuera de Supabase Auth.
+En Supabase revisa **Authentication → Providers → Email** y **Authentication → SMTP Settings**. El MCP disponible no expone esos ajustes; no se verificó la entrega real de correo ni SMTP. Si necesitas confirmación, configura SMTP y prueba la recepción con una cuenta real. Las contraseñas se administran exclusivamente mediante Supabase Auth.
 
 ## Flujo y seguridad
 
@@ -38,13 +40,13 @@ Registro e inicio de sesión usan Supabase Auth. Un disparador crea `profiles` c
 
 La aplicación conserva el `request_id` y la ruta en almacenamiento seguro después de confirmar la foto. Ante un fallo, el reintento pide biometría otra vez y consulta primero la RPC. Si la checada ya existe, recibe el mismo comprobante; si falta la foto, intenta subirla y vuelve a llamar a la RPC. Si el archivo temporal desapareció, pide tomar otra foto para la misma solicitud. Antes de confirmar la foto no hay subida ni registro.
 
-`public.finalize_attendance` invoca una función privilegiada en `attendance_private`. Esta obtiene el usuario de la sesión, exige la foto exacta `<usuario>/<request_id>.jpg` y su propiedad, serializa las solicitudes por usuario, impide dos entradas seguidas o una salida sin entrada, y devuelve la fecha y hora asignadas por PostgreSQL. `attendance` permite SELECT propio, pero ningún INSERT directo del cliente. La combinación `(user_id, request_id)` es única. Storage permite crear y consultar solo fotos propias; no permite reemplazarlas ni borrarlas con la clave pública.
+`public.finalize_attendance` invoca una función privilegiada en `attendance_private`. Esta obtiene el usuario de la sesión, exige la foto exacta `<usuario>/<request_id>.jpg` y su propiedad, serializa las solicitudes por usuario, impide dos entradas seguidas o una salida sin entrada, y devuelve la fecha y hora asignadas por PostgreSQL. Los usuarios normales solo consultan sus registros y fotos; ningún cliente puede insertar directamente en `attendance`. La combinación `(user_id, request_id)` es única. Storage permite crear fotos propias y no permite reemplazarlas ni borrarlas con la clave pública. Las cuentas autorizadas por el propietario como supervisor pueden consultar los datos de todos los usuarios mediante las migraciones del repositorio web.
 
 **Límite de confianza:** la biometría se comprueba localmente en el teléfono. Supabase no recibe una prueba criptográfica independiente de que se haya usado el sensor. La selfie es evidencia visual; esta aplicación no compara rostros ni detecta vida. La modalidad disponible depende del dispositivo Android y de Expo Go.
 
 ## Migraciones y limpieza de pruebas
 
-Las migraciones aplicadas en el proyecto `kqabddlasmvipuskvnvr` son `20260924054226_attendance_initial.sql`, `20260924055128_private_rpc.sql` y `20260924060046_monotonic_server_time.sql`. El bucket es privado, acepta solo `image/jpeg` y limita cada archivo a 2 MiB. Las políticas y las funciones están en esos archivos; `supabase/tests/attendance_rules.sql` prueba reglas en una transacción que termina con `ROLLBACK`.
+Las migraciones base del móvil aplicadas en el proyecto `kqabddlasmvipuskvnvr` son `20260924054226_attendance_initial.sql`, `20260924055128_private_rpc.sql` y `20260924060046_monotonic_server_time.sql`. El bucket es privado, acepta solo `image/jpeg` y limita cada archivo a 2 MiB. Las políticas y las funciones están en esos archivos; `supabase/tests/attendance_rules.sql` prueba reglas en una transacción que termina con `ROLLBACK`. El repositorio web contiene las tres migraciones posteriores para supervisores, Realtime y lectura de dueño o supervisor; se aplicaron conservando las funciones y los datos del móvil.
 
 Una foto confirmada puede quedar sin registro si se corta la conexión, si el servidor rechaza el movimiento o si se abandona un reintento. Para localizar fotos de prueba huérfanas ejecuta esta consulta de **solo lectura** en Supabase:
 
@@ -66,16 +68,15 @@ Revisa las solicitudes pendientes de los celulares antes de borrar. Elimina solo
 - Mediante MCP: migraciones aplicadas; tablas y bucket inspeccionados; RLS, permisos y asesor de seguridad verificados. La prueba SQL transaccional pasó para movimientos válidos e inválidos, orden temporal, reintento duplicado, propiedad de foto y separación entre dos usuarios. Otra prueba con dos solicitudes simultáneas guardó una entrada y rechazó la segunda. Los metadatos temporales se eliminaron.
 - Mediante la API pública: registro real de cuenta temporal, creación del perfil, rechazo de inicio de sesión sin confirmar correo, inicio de sesión tras confirmar esa cuenta de prueba, rechazo de INSERT directo (`42501`) y rechazo de subida fuera de la ruta permitida (`403`). La cuenta de prueba se eliminó.
 
-No hubo acceso a un Android físico en este entorno. El bundle y las pruebas de backend no demuestran el funcionamiento del sensor ni de la cámara en tu teléfono.
-No se pudo realizar una subida válida de Storage desde una cuenta de prueba adicional porque Auth respondió `email rate limit exceeded` al crearla. La subida real y la recepción del correo deben comprobarse en el celular con una cuenta propia.
+No hubo acceso a un Android físico en este entorno. Posteriormente, el propietario confirmó el funcionamiento en su teléfono y la fotografía guardada en Supabase. La recepción de correo y SMTP sigue sin verificarse.
 
 ## Pruebas en tu Android
 
-1. Registra una cuenta con un correo que puedas confirmar, confirma el correo e inicia sesión. Comprueba que aparece tu nombre.
+1. Registra una cuenta e inicia sesión. Si activaste la confirmación de correo, confírmalo primero. Comprueba que aparece tu nombre.
 2. Con una huella o rostro compatible configurado en Android, registra **entrada**: biometría → selfie frontal → repetir o confirmar → comprobante y último movimiento.
 3. Registra **salida** y confirma que cambia el último movimiento. Comprueba que la app bloquea dos entradas seguidas y una salida sin entrada.
 4. Cancela la biometría, niega el permiso de cámara y cancela una foto sin confirmarla. Comprueba en Supabase que no se creó una checada.
 5. Corta la red después de confirmar una foto y usa **Reintentar** al recuperarla. Comprueba que aparece un solo registro y que el comprobante usa la fecha del servidor. Repite tras cerrar y abrir Expo Go.
-6. Inicia sesión con otra cuenta y comprueba que no ve el nombre, los movimientos ni las fotografías de la primera.
+6. Inicia sesión con otra cuenta sin permiso de supervisor y comprueba que no ve el nombre, los movimientos ni las fotografías de la primera.
 
 Fuentes de compatibilidad: [Expo Go y versiones de SDK](https://docs.expo.dev/troubleshooting/expo-go-version-mismatch/), [biometría](https://docs.expo.dev/versions/v57.0.0/sdk/local-authentication/), [cámara](https://docs.expo.dev/versions/v57.0.0/sdk/camera/), [manipulación de imagen](https://docs.expo.dev/versions/v57.0.0/sdk/imagemanipulator/), [funciones de Supabase](https://supabase.com/docs/guides/database/functions).
